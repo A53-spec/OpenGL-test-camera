@@ -12,6 +12,10 @@
 #include "camera.h"
 #include "VertBuffer.h"
 
+#define PLAYER_MAXSPEED 50
+#define DEGTORAD 0.01745329251
+#define MAX_VIEWDISTANCE 1000
+#define MOUSESPEED 0.5
 GLFWwindow *gWindow;
 
 float points[] = {
@@ -92,15 +96,13 @@ float colours[] = {
     0.982f,  0.099f,  0.879f
 };
 
-const int Width = 1280;
-const int Height = 720;
+int keymap[100];
 
 float x=0,y=0,z=0;
 
 vec3 cameraPos, cameraFront, cameraUp;
 vec3 Add_pos_front; 
-float lastX=1280/2, lastY=720/2;
-float yaw=-90.0f,pitch;
+
 int firstMouse=1;
 float camSpeed = 5.0f;
 float fov=45;
@@ -111,12 +113,16 @@ void scroll_callback(GLFWwindow* window, double xoffset, double yoffset);
 void Mouse_callback(GLFWwindow* window, int state, int xpos,int ypos);
 void Key_Callback(GLFWwindow* window, int key, int scancode, int action, int mods);
 void Init_GLFW_GLEW(int Width, int Height, const char* WindowName);
+void keyUpdate(void);
 //WinMain(){
 int main(){
 	//Initalisation
 	
 	GLint link_ok=0;
 	GLint compile_ok=0;
+	
+	const int Width = 1280;
+	const int Height = 720;
 
 	Init_GLFW_GLEW(Width,Height,"Cubes !");
 	glfwSetInputMode(gWindow, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
@@ -131,14 +137,8 @@ int main(){
   	glDepthFunc(GL_LESS); // depth-testing interprets a smaller value as "closer"
 	
 	GLuint Texture = loadBMP("test.bmp");
-	GLuint points_vbo = 0;
-	glGenBuffers(1, &points_vbo);
-	glBindBuffer(GL_ARRAY_BUFFER, points_vbo);
-	glBufferData(GL_ARRAY_BUFFER, sizeof(points), points, GL_STATIC_DRAW);
-	GLuint colours_vbo = 0;
-	glGenBuffers(1, &colours_vbo);
-	glBindBuffer(GL_ARRAY_BUFFER, colours_vbo);
-	glBufferData(GL_ARRAY_BUFFER, sizeof(colours), colours, GL_STATIC_DRAW);
+	GLuint points_vbo = VB_Add(points,sizeof(points));
+	GLuint colours_vbo = VB_Add(colours,sizeof(colours));
 
 	GLuint vao = 0;
 	glGenVertexArrays(1, &vao);
@@ -159,6 +159,7 @@ int main(){
 	glBindAttribLocation(shader_programme, 0, "vertex_position");
 	glBindAttribLocation(shader_programme, 1, "vertex_colour");
 	glLinkProgram(shader_programme);
+
 	glGetProgramiv(shader_programme, GL_LINK_STATUS, &link_ok);
 	if(!link_ok){
 		printf("[ERROR] Error in glinkProgram\n");
@@ -167,32 +168,25 @@ int main(){
 
 	GLint mov = glGetUniformLocation(shader_programme, "m_transform");
 	if(mov!=-1){
-		printf("[INFO] link mov\n");
+		printf("[INFO] Could link mov matrix\n");
 	}else{
-		printf("[INFO] mov not found\n");
+		printf("[ERROR] mov not found\n");
 	}
 	mat4x4 Model;
 	mat4x4 Projection;
 	mat4x4 view;
 	mat4x4 result;
 	mat4x4 temp;
-	mat4x4 te;
-	mat4x4 t;
 	mat4x4_identity(result);
 	mat4x4_identity(view);
 	mat4x4_identity(Projection);
 	mat4x4_identity(Model);
 
-	double mousex,mousey;
 	int i,j;
-	vec3 center;
-	vec3 up={0.0f,1.0f,0.0f};
-	printf("[INFO] Diplaying !\n");
 	cameraPos[0] = cameraPos[2] = cameraPos[1] = 3.0f;
 	cameraFront[0] = cameraFront[1]=cameraFront[2] = 0.0f;
 	cameraUp[0] = cameraUp[2] = 0.0f; cameraUp[1] = 1.0f;
-	
-
+	printf("[INFO] Diplaying !\n");
 	while(!glfwWindowShouldClose(gWindow)){
 		currentframe = glfwGetTime();
 		deltaTime = currentframe - lastframe;
@@ -203,13 +197,15 @@ int main(){
 		glMatrixMode(GL_PROJECTION);
 		glLoadIdentity();
 
-	
+		keyUpdate();
+		glfwPollEvents();
+
 		vec3_add(Add_pos_front,cameraPos,cameraFront);	
-		mat4x4_perspective(Projection,fov*0.01745329251,Width/Height,0.1f,100.0f);										
+		mat4x4_perspective(Projection,fov*DEGTORAD,Width/Height,0.1f,MAX_VIEWDISTANCE);										
 		mat4x4_look_at(view,cameraPos,Add_pos_front,cameraUp);
 		mat4x4_mul(temp,Projection,view);
 		mat4x4_mul(result,temp,Model);
-		glfwPollEvents();
+
 
 		glUseProgram(shader_programme);
 		//625 draw calls !!
@@ -223,15 +219,15 @@ int main(){
 			}
 		}
 
-
 		glfwSwapBuffers(gWindow);
 		//printf("%f\n", 1/deltaTime); //printf fps
+		
 	}
-
     // De-Initialization
 	printf("[INFO] De-Initialization...\n");
 	glDeleteProgram(shader_programme);
-	glDeleteBuffers(1,&points_vbo);
+	VB_Destroy(points_vbo);
+	VB_Destroy(colours_vbo);
 	glDeleteVertexArrays(1,&vao);
 	glfwDestroyWindow(gWindow);
 	glfwTerminate();
@@ -239,14 +235,14 @@ int main(){
 }
 
 
-void scroll_callback(GLFWwindow* window, double xoffset, double yoffset)
-{
-    //camSpeed -= (float)yoffset;
+void scroll_callback(GLFWwindow* window, double xoffset, double yoffset){
 	fov -= (float)yoffset;
 }
 
 static void Mouse_callback(GLFWwindow* window, int state, int xpos,int ypos){
 	double posx,posy;
+	static float lastX=1280/2, lastY=720/2;
+	static float yaw=-90.0f,pitch;
 	glfwGetCursorPos(gWindow,&posx,&posy);
 	int i;
 	if (firstMouse)
@@ -274,55 +270,20 @@ static void Mouse_callback(GLFWwindow* window, int state, int xpos,int ypos){
         pitch = -89.0f;
 
     vec3 direction;
-    direction[0] = cos((yaw)*0.01745329251) * cos((pitch)*0.01745329251);
-    direction[1] = sin((pitch)*0.01745329251);
-    direction[2] = sin((yaw)*0.01745329251) * cos((pitch)*0.01745329251);
+    direction[0] = cos((yaw)*DEGTORAD) * cos((pitch)*DEGTORAD);
+    direction[1] = sin((pitch)*DEGTORAD);
+    direction[2] = sin((yaw)*DEGTORAD) * cos((pitch)*DEGTORAD);
 	for(i=0;i<3;i++){
-		cameraFront[i] = direction[i];
-		//printf("%d: %d", i,cameraFront[i]);
+		cameraFront[i] = MOUSESPEED*direction[i];
 	}
-	//printf("\n");
 }
+
 static void Key_Callback(GLFWwindow* window, int key, int scancode, int action, int mods){
     if (key == GLFW_KEY_ESCAPE && action == GLFW_PRESS){
 		glfwSetWindowShouldClose(window, GLFW_TRUE);
 	}
-	if(key == GLFW_KEY_W && (action == GLFW_REPEAT)){
-		int i;
-		for(i=0;i<3;i++){
-			cameraPos[i] +=camSpeed*deltaTime*cameraFront[i];
-		}
-	}
-	if(key == GLFW_KEY_S &&  (action == GLFW_REPEAT)){
-		int i;
-		for(i=0;i<3;i++){
-			cameraPos[i] -=camSpeed*deltaTime*cameraFront[i];
-		}
-	}
-	if(key == GLFW_KEY_A &&  (action == GLFW_PRESS || action == GLFW_REPEAT)){
-		vec3 temp;
-		int i;
-		//vec3_norm(cameraFront,cameraUp);
-		vec3_mul_cross(temp,cameraFront,cameraUp);
-		for(i=0;i<3;i++){
-			cameraPos[i] -=camSpeed*deltaTime*temp[i];
-		}
-	}
-	if(key == GLFW_KEY_D &&  (action == GLFW_PRESS || action == GLFW_REPEAT)){
-		vec3 temp;
-		int i;
-		//vec3_norm(cameraFront,cameraUp);
-		vec3_mul_cross(temp,cameraFront,cameraUp);
-		for(i=0;i<3;i++){
-			cameraPos[i] +=camSpeed*deltaTime*temp[i];
-		}	
-	}
-	if(key == GLFW_KEY_Q &&  (action == GLFW_PRESS || action == GLFW_REPEAT)){
-		camSpeed++;
-	}
-	if(key == GLFW_KEY_E &&  (action == GLFW_PRESS || action == GLFW_REPEAT)){
-		camSpeed--;
-	}
+
+	keymap[key] = (glfwGetKey(gWindow,key) == GLFW_PRESS);
 }
 //refaire vect3 add et vec3 scale !
 void Init_GLFW_GLEW(int Width, int Height, const char* WindowName){
@@ -365,4 +326,44 @@ void Init_GLFW_GLEW(int Width, int Height, const char* WindowName){
 		abort();
 	}
 	printf("[INFO] Using GLEW version :%s\n", glewGetString(GLEW_VERSION));
+}
+
+void keyUpdate(void){
+		int i;
+		if(keymap[GLFW_KEY_W]){
+			for(i=0;i<3;i++){
+				cameraPos[i] +=camSpeed*deltaTime*cameraFront[i];
+			}
+		}
+		if(keymap[GLFW_KEY_S]){
+			for(i=0;i<3;i++){
+				cameraPos[i] -=camSpeed*deltaTime*cameraFront[i];
+			}
+		}
+		if(keymap[GLFW_KEY_A]){
+			vec3 temp;
+			int i;
+			//vec3_norm(cameraFront,cameraUp);
+			vec3_mul_cross(temp,cameraFront,cameraUp);
+			for(i=0;i<3;i++){
+				cameraPos[i] -=camSpeed*deltaTime*temp[i];
+			}
+		}
+		if(keymap[GLFW_KEY_D]){
+			vec3 temp;
+			int i;
+			//vec3_norm(cameraFront,cameraUp);
+			vec3_mul_cross(temp,cameraFront,cameraUp);
+			for(i=0;i<3;i++){
+				cameraPos[i] +=camSpeed*deltaTime*temp[i];
+			}	
+		}
+		if(keymap[GLFW_KEY_LEFT_SHIFT]){
+			camSpeed++;
+			if(camSpeed>PLAYER_MAXSPEED)camSpeed=PLAYER_MAXSPEED;
+		}
+		if(keymap[GLFW_KEY_LEFT_CONTROL]){
+			camSpeed--;
+			if(camSpeed<0)camSpeed=0;
+		}
 }
