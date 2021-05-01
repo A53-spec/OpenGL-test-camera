@@ -15,7 +15,7 @@ typedef struct vector2{
 char* file_read(const char* filename);
 GLuint create_shader(const char* filename, GLenum type);
 GLuint loadBMP(const char* filename);
-//GLuint loadOBJ(const char* filename, vec3* out_vertices, vec2* out_uvs, vec3* out_normals);
+GLuint loadOBJ(const char* filename);
 #endif 
 
 
