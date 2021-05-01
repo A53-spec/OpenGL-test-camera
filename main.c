@@ -11,11 +11,14 @@
 #include "utils.h"
 #include "camera.h"
 #include "VertBuffer.h"
+#include "VertArray.h"
+
 
 #define PLAYER_MAXSPEED 50
 #define DEGTORAD 0.01745329251
 #define MAX_VIEWDISTANCE 1000
 #define MOUSESPEED 0.5
+
 GLFWwindow *gWindow;
 
 float points[] = {
@@ -101,7 +104,6 @@ int keymap[100];
 float x=0,y=0,z=0;
 
 vec3 cameraPos, cameraFront, cameraUp;
-vec3 Add_pos_front; 
 
 int firstMouse=1;
 float camSpeed = 5.0f;
@@ -114,6 +116,8 @@ void Mouse_callback(GLFWwindow* window, int state, int xpos,int ypos);
 void Key_Callback(GLFWwindow* window, int key, int scancode, int action, int mods);
 void Init_GLFW_GLEW(int Width, int Height, const char* WindowName);
 void keyUpdate(void);
+void draw(GLuint list);
+
 //WinMain(){
 int main(){
 	//Initalisation
@@ -138,7 +142,7 @@ int main(){
 	
 	GLuint Texture = loadBMP("test.bmp");
 	GLuint points_vbo = VB_Add(points,sizeof(points));
-	GLuint colours_vbo = VB_Add(colours,sizeof(colours));
+	GLuint colours_vbo =VB_Add(colours,sizeof(colours));
 
 	GLuint vao = 0;
 	glGenVertexArrays(1, &vao);
@@ -161,6 +165,7 @@ int main(){
 	glLinkProgram(shader_programme);
 
 	glGetProgramiv(shader_programme, GL_LINK_STATUS, &link_ok);
+
 	if(!link_ok){
 		printf("[ERROR] Error in glinkProgram\n");
 		abort();
@@ -172,6 +177,9 @@ int main(){
 	}else{
 		printf("[ERROR] mov not found\n");
 	}
+
+	vec3 vec3temp;
+
 	mat4x4 Model;
 	mat4x4 Projection;
 	mat4x4 view;
@@ -183,9 +191,12 @@ int main(){
 	mat4x4_identity(Model);
 
 	int i,j;
+
 	cameraPos[0] = cameraPos[2] = cameraPos[1] = 3.0f;
 	cameraFront[0] = cameraFront[1]=cameraFront[2] = 0.0f;
 	cameraUp[0] = cameraUp[2] = 0.0f; cameraUp[1] = 1.0f;
+	GLuint test;
+	test = loadOBJ("bugatti.obj");
 	printf("[INFO] Diplaying !\n");
 	while(!glfwWindowShouldClose(gWindow)){
 		currentframe = glfwGetTime();
@@ -200,15 +211,19 @@ int main(){
 		keyUpdate();
 		glfwPollEvents();
 
-		vec3_add(Add_pos_front,cameraPos,cameraFront);	
-		mat4x4_perspective(Projection,fov*DEGTORAD,Width/Height,0.1f,MAX_VIEWDISTANCE);										
-		mat4x4_look_at(view,cameraPos,Add_pos_front,cameraUp);
+		draw(test);//draw obj
+
+
+		vec3_add(vec3temp,cameraPos,cameraFront);	
+		mat4x4_perspective(Projection,fov*DEGTORAD,Width/Height,0.01f,MAX_VIEWDISTANCE);										
+		mat4x4_look_at(view,cameraPos,vec3temp,cameraUp);
 		mat4x4_mul(temp,Projection,view);
 		mat4x4_mul(result,temp,Model);
 
 
 		glUseProgram(shader_programme);
 		//625 draw calls !!
+		//implement batch rendering
 		for(i=0;i<50;i+=2){
 			for(j=0;j<50;j+=2){
 				mat4x4_translate_in_place(result,j,0.0f,i);
@@ -236,7 +251,7 @@ int main(){
 
 
 void scroll_callback(GLFWwindow* window, double xoffset, double yoffset){
-	fov -= (float)yoffset;
+	fov -= (float)yoffset;	
 }
 
 static void Mouse_callback(GLFWwindow* window, int state, int xpos,int ypos){
@@ -359,11 +374,21 @@ void keyUpdate(void){
 			}	
 		}
 		if(keymap[GLFW_KEY_LEFT_SHIFT]){
-			camSpeed++;
+			camSpeed+=2.1;
 			if(camSpeed>PLAYER_MAXSPEED)camSpeed=PLAYER_MAXSPEED;
 		}
 		if(keymap[GLFW_KEY_LEFT_CONTROL]){
-			camSpeed--;
+			camSpeed-=2.3;
 			if(camSpeed<0)camSpeed=0;
 		}
+}
+
+
+void draw(GLuint list){
+	glPushMatrix();
+	glTranslatef(-625,-625,-105);
+	glColor3f(1.0,0.23,0.27);
+	glScalef(1,1,1);
+	glCallList(list);
+	glPopMatrix();
 }

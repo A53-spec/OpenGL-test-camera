@@ -129,29 +129,35 @@ GLuint loadBMP(const char* filename){
 	return textureID;
 }
 
-/*
-GLuint loadOBJ(const char* filename, vec3* out_vertices, vec2* out_uvs, vec3* out_normals){
-	unsigned int vertexIndices, uvIndices, normalIndices;
-	vec3 temp_vertices;
-	vec2 temp_uvs;
-	vec3 temp_normals;
 
+GLuint loadOBJ(const char* filename){
+	int read;
+	char ch;
+	float x,y,z;
 	FILE * file = fopen(filename, "r");
 	if( file == NULL ){
 		printf("[ERROR] Error opening the 3D OBJ file...\n");
 		abort();
 	}
+	printf("[INFO] Opening OBJ file...\n");
 
-	while(1){
-		char lineHeader[128];
-		int res = fscanf(file,"%s",lineHeader);
-		if(res==EOF) break;
-
-		if ( strcmp( lineHeader, "v" ) == 0 ){
-    		vec3 vertex;
-    		fscanf(file, "%f %f %f\n", &vertex.x, &vertex.y, &vertex.z );
-    		temp_vertices.push_back(vertex);
+	int test = glGenLists(1);
+	glPointSize(2.0);
+	glNewList(test,GL_COMPILE);
+	{
+		glPushMatrix();
+		glBegin(GL_POINTS);
+		while(!(feof(file))){
+			read = fscanf(file,"%c %f %f %f", &ch,&x,&y,&z);
+			if(read == 4 && ch=='v'){
+				glVertex3f(x,y,z);
+			}
 		}
+		glEnd();
 	}
-
-}*/
+	glPopMatrix();
+	glEndList();
+	fclose(file);
+	printf("[INFO] OBJ file : %s loaded !\n", filename);
+	return test;
+}
